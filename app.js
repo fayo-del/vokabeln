@@ -4,9 +4,10 @@ const STORAGE_KEY = 'vokabeln.progress.v1';
 const EXAMPLES_KEY = 'vokabeln.examples.v1';
 const LANG_KEY = 'vokabeln.lang.v1';
 const TYPES_KEY = 'vokabeln.types.v1';
+const SIZE_KEY = 'vokabeln.size.v1';
+const SIZES = [10, 20, 50, 0];
 const TYPES = ['p3', 'praet', 'perf', 'plural', 'artikel', 'german'];
 const TYPE_LABEL = { p3: 'typeP3', praet: 'typePraet', perf: 'typePerf', plural: 'typePlural', artikel: 'typeArtikel', german: 'typeGerman' };
-const SESSION_SIZE = 10;
 const INTERVALS = [0, 10 * 60_000, 24 * 3_600_000, 3 * 86_400_000, 7 * 86_400_000, 21 * 86_400_000];
 const MAX_BOX = INTERVALS.length - 1;
 const KNOWN_BOX = 3;
@@ -68,6 +69,8 @@ const T = {
     typePlural: 'Plural',
     typeArtikel: 'Artikel',
     typeGerman: 'Übersetzung',
+    amount: 'Anzahl Fragen',
+    all: 'Alle',
   },
   fr: {
     lesson: 'Leçon',
@@ -123,6 +126,8 @@ const T = {
     typePlural: 'Pluriel',
     typeArtikel: 'Article',
     typeGerman: 'Traduction',
+    amount: 'Nombre de questions',
+    all: 'Tout',
   },
 };
 
@@ -174,6 +179,7 @@ const state = {
   showExamples: false,
   lang: 'de',
   types: { p3: true, praet: true, perf: true, plural: true, artikel: true, german: true },
+  size: 10,
 };
 
 /* ---------- data ---------- */
@@ -309,8 +315,14 @@ function homeView() {
       ${TYPES.map((k) => `<button class="chip ${state.types[k] ? 'active' : ''}" data-type="${k}">${t(TYPE_LABEL[k])}</button>`).join('')}
     </div>
   </div>
+  <div class="types">
+    <p class="section-title">${t('amount')}</p>
+    <div class="chips">
+      ${SIZES.map((n) => `<button class="chip ${state.size === n ? 'active' : ''}" data-size="${n}">${n || t('all')}</button>`).join('')}
+    </div>
+  </div>
   <div style="height:4px"></div>
-  <button class="primary" id="start">${t('startQuiz')}<small>${t('questions')(Math.min(SESSION_SIZE, total))}</small></button>
+  <button class="primary" id="start">${t('startQuiz')}<small>${t('questions')(Math.min(state.size || total, total))}</small></button>
   <button class="secondary" id="cards">${t('cards')}</button>
   <button class="toggle" id="toggleExamples" aria-pressed="${state.showExamples}">
     <span>${t('examples')}</span>
@@ -581,6 +593,18 @@ function wire() {
       render();
     }));
 
+  document.querySelectorAll('[data-size]').forEach((btn) =>
+    btn.addEventListener('click', () => {
+      state.size = Number(btn.dataset.size);
+      try {
+        localStorage.setItem(SIZE_KEY, String(state.size));
+      } catch {
+        /* private mode */
+      }
+      state.quiz = null;
+      render();
+    }));
+
   document.querySelectorAll('[data-lang]').forEach((btn) =>
     btn.addEventListener('click', () => {
       state.lang = btn.dataset.lang;
@@ -615,7 +639,7 @@ function wire() {
 /* ---------- actions ---------- */
 
 function startQuiz() {
-  const queue = pickSession(SESSION_SIZE);
+  const queue = pickSession(state.size || activePrompts().length);
   state.quiz = { queue, index: 0, verdict: null, correct: 0, done: queue.length === 0 };
   state.tab = 'lernen';
   render();
@@ -740,6 +764,8 @@ async function init() {
     state.showExamples = localStorage.getItem(EXAMPLES_KEY) === '1';
     state.lang = localStorage.getItem(LANG_KEY) === 'fr' ? 'fr' : 'de';
     state.types = loadTypes();
+    const size = Number(localStorage.getItem(SIZE_KEY));
+    state.size = SIZES.includes(size) ? size : 10;
   } catch {
     state.showExamples = false;
   }
