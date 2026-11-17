@@ -7,8 +7,8 @@ const TYPES_KEY = 'vokabeln.types.v1';
 const SIZE_KEY = 'vokabeln.size.v1';
 const WRITE_KEY = 'vokabeln.write.v1';
 const SIZES = [10, 20, 50, 0];
-const TYPES = ['p3', 'praet', 'perf', 'plural', 'artikel', 'german'];
-const TYPE_LABEL = { p3: 'typeP3', praet: 'typePraet', perf: 'typePerf', plural: 'typePlural', artikel: 'typeArtikel', german: 'typeGerman' };
+const TYPES = ['p3', 'praet', 'perf', 'plural', 'artikel', 'german', 'wordplural'];
+const TYPE_LABEL = { p3: 'typeP3', praet: 'typePraet', perf: 'typePerf', plural: 'typePlural', artikel: 'typeArtikel', german: 'typeGerman', wordplural: 'wordplural' };
 const INTERVALS = [0, 10 * 60_000, 24 * 3_600_000, 3 * 86_400_000, 7 * 86_400_000, 21 * 86_400_000];
 const MAX_BOX = INTERVALS.length - 1;
 const KNOWN_BOX = 3;
@@ -70,6 +70,8 @@ const T = {
     typePlural: 'Plural',
     typeArtikel: 'Artikel',
     typeGerman: 'Übersetzung',
+    wordplural: 'Wort + Plural',
+    singular: 'Singular',
     amount: 'Anzahl Fragen',
     all: 'Alle',
     write: 'Antworten schreiben',
@@ -128,6 +130,8 @@ const T = {
     typePlural: 'Pluriel',
     typeArtikel: 'Article',
     typeGerman: 'Traduction',
+    wordplural: 'Mot + pluriel',
+    singular: 'Singulier',
     amount: 'Nombre de questions',
     all: 'Tout',
     write: 'Écrire les réponses',
@@ -181,7 +185,7 @@ const state = {
   error: null,
   showExamples: false,
   lang: 'de',
-  types: { p3: true, praet: true, perf: true, plural: true, artikel: true, german: true },
+  types: { p3: true, praet: true, perf: true, plural: true, artikel: true, german: true, wordplural: true },
   size: 10,
   write: true,
 };
@@ -198,6 +202,7 @@ function buildPrompts(lesson) {
     out.push({ key: `v|${v.infinitiv}|p3`, subject, ask: 'p3', answer: v.praesens, paradigm, example });
     out.push({ key: `v|${v.infinitiv}|praet`, subject, ask: 'praet', answer: v.praeteritum, paradigm, example });
     out.push({ key: `v|${v.infinitiv}|perf`, subject, ask: 'perf', answer: v.perfekt, paradigm, example });
+    out.push({ key: `v|${v.infinitiv}|de`, subject, ask: 'german', answer: v.infinitiv, paradigm, example });
   }
 
   for (const n of lesson.nomen || []) {
@@ -206,6 +211,18 @@ function buildPrompts(lesson) {
     const subject = n.uebersetzung || n.singular;
     if (n.plural && n.plural !== n.singular) {
       out.push({ key: `n|${n.singular}|pl`, subject, ask: 'plural', answer: n.plural, paradigm, example });
+    }
+    out.push({ key: `n|${n.singular}|de`, subject, ask: 'german', answer: n.singular, paradigm, example });
+    if (n.plural && n.plural !== n.singular) {
+      out.push({
+        key: `n|${n.singular}|both`,
+        subject,
+        ask: 'wordplural',
+        answer: `${n.singular} · ${n.plural}`,
+        fields: [n.singular, n.plural],
+        paradigm,
+        example,
+      });
     }
     const [artikel, ...rest] = n.singular.split(' ');
     if (rest.length) {
@@ -385,10 +402,19 @@ function answerView(p) {
       .map((o) => `<button class="choice" data-choice="${esc(o)}">${esc(o)}</button>`)
       .join('')}</div>`;
   }
+  const fields = p.fields || [null];
+  const inputs = fields.map((f, i) => (fields.length > 1
+    ? `<label class="field">
+         <span class="field-label">${esc(t(i === 0 ? 'singular' : 'plural'))}</span>
+         <input ${i === 0 ? 'id="answer"' : ''} data-field="${i}" class="input" type="text" autocapitalize="none"
+                autocorrect="off" spellcheck="false" placeholder="…">
+       </label>`
+    : `<input id="answer" class="input" type="text" enterkeyhint="done" autocapitalize="none"
+              autocorrect="off" spellcheck="false" placeholder="…">`)).join('');
+
   return `
   <form class="answer" id="form" autocomplete="off">
-    <input id="answer" class="input" type="text" enterkeyhint="done" autocapitalize="none"
-           autocorrect="off" spellcheck="false" placeholder="…">
+    ${inputs}
     <div class="umlauts">
       ${['ä', 'ö', 'ü', 'ß'].map((c) => `<button type="button" class="key" data-umlaut="${c}">${c}</button>`).join('')}
     </div>
@@ -593,7 +619,8 @@ function wire() {
   if (form) {
     form.addEventListener('submit', (e) => {
       e.preventDefault();
-      submitAnswer($('answer').value);
+      const inputs = [...form.querySelectorAll('input.input')];
+      submitAnswer(inputs.length > 1 ? inputs.map((i) => i.value) : inputs[0].value);
     });
     $('answer').focus();
   }
@@ -678,7 +705,9 @@ function submitAnswer(value) {
   const q = state.quiz;
   if (!q || q.verdict !== null) return;
   const p = q.queue[q.index];
-  const ok = matches(p, value);
+  const ok = Array.isArray(value)
+    ? p.fields.every((f, i) => acceptedAnswers(f).has(normalize(value[i] || '')))
+    : matches(p, value);
   store.grade(p.key, ok);
   q.verdict = ok;
   if (ok) q.correct += 1;
@@ -710,8 +739,19 @@ function gradeCard(ok) {
   render();
 }
 
+let lastFocusedInput = null;
+
+document.addEventListener('focusin', (event) => {
+  if (event.target?.classList?.contains('input')) lastFocusedInput = event.target;
+});
+
 function insertUmlaut(ch) {
-  const input = document.getElementById('answer');
+  const active = document.activeElement;
+  const input = active?.classList?.contains('input')
+    ? active
+    : lastFocusedInput?.isConnected
+      ? lastFocusedInput
+      : document.getElementById('answer');
   if (!input) return;
   const start = input.selectionStart ?? input.value.length;
   const end = input.selectionEnd ?? start;
