@@ -288,9 +288,10 @@ function cardsView() {
 function listView() {
   const q = state.query.trim().toLowerCase();
   const hit = (fields) => !q || fields.join(' ').toLowerCase().includes(q);
-  const verbs = (state.lesson.verben || []).filter((v) => hit([v.infinitiv, v.praesens, v.praeteritum, v.perfekt, v.uebersetzung || '']));
-  const nouns = (state.lesson.nomen || []).filter((n) => hit([n.singular, n.plural, n.uebersetzung || '']));
-  const others = (state.lesson.andere || []).filter((w) => hit([w.wort, w.uebersetzung || '']));
+  const ex = (b) => (b ? [b.de, b.fr] : []);
+  const verbs = (state.lesson.verben || []).filter((v) => hit([v.infinitiv, v.praesens, v.praeteritum, v.perfekt, v.uebersetzung || '', ...ex(v.beispiel)]));
+  const nouns = (state.lesson.nomen || []).filter((n) => hit([n.singular, n.plural, n.uebersetzung || '', ...ex(n.beispiel)]));
+  const others = (state.lesson.andere || []).filter((w) => hit([w.wort, w.uebersetzung || '', ...ex(w.beispiel)]));
 
   const verbRows = verbs.map((v) => `
     <li class="entry">
