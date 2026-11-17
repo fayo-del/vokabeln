@@ -1,6 +1,7 @@
 'use strict';
 
 const STORAGE_KEY = 'vokabeln.progress.v1';
+const EXAMPLES_KEY = 'vokabeln.examples.v1';
 const SESSION_SIZE = 10;
 const INTERVALS = [0, 10 * 60_000, 24 * 3_600_000, 3 * 86_400_000, 7 * 86_400_000, 21 * 86_400_000];
 const MAX_BOX = INTERVALS.length - 1;
@@ -47,6 +48,7 @@ const state = {
   lesson: null,
   prompts: [],
   error: null,
+  showExamples: false,
 };
 
 /* ---------- data ---------- */
@@ -55,13 +57,17 @@ function buildPrompts(lesson) {
   const out = [];
   for (const v of lesson.verben || []) {
     const paradigm = `${v.infinitiv} · ${v.praesens} · ${v.praeteritum} · ${v.perfekt}`;
-    out.push({ key: `v|${v.infinitiv}|p3`, subject: v.infinitiv, ask: '3. Person Singular Präsens', answer: v.praesens, paradigm });
-    out.push({ key: `v|${v.infinitiv}|praet`, subject: v.infinitiv, ask: 'Präteritum', answer: v.praeteritum, paradigm });
-    out.push({ key: `v|${v.infinitiv}|perf`, subject: v.infinitiv, ask: 'Perfekt', answer: v.perfekt, paradigm });
+    const example = v.beispiel || null;
+    out.push({ key: `v|${v.infinitiv}|p3`, subject: v.infinitiv, ask: '3. Person Singular Präsens', answer: v.praesens, paradigm, example });
+    out.push({ key: `v|${v.infinitiv}|praet`, subject: v.infinitiv, ask: 'Präteritum', answer: v.praeteritum, paradigm, example });
+    out.push({ key: `v|${v.infinitiv}|perf`, subject: v.infinitiv, ask: 'Perfekt', answer: v.perfekt, paradigm, example });
   }
   for (const n of lesson.nomen || []) {
-    const paradigm = `${n.singular} · ${n.plural}`;
-    out.push({ key: `n|${n.singular}|pl`, subject: n.singular, ask: 'Plural', answer: n.plural, paradigm });
+    const paradigm = n.singular === n.plural ? n.singular : `${n.singular} · ${n.plural}`;
+    const example = n.beispiel || null;
+    if (n.plural && n.plural !== n.singular) {
+      out.push({ key: `n|${n.singular}|pl`, subject: n.singular, ask: 'Plural', answer: n.plural, paradigm, example });
+    }
     const [artikel, ...rest] = n.singular.split(' ');
     if (rest.length) {
       out.push({
@@ -70,9 +76,24 @@ function buildPrompts(lesson) {
         ask: 'Artikel',
         answer: artikel,
         paradigm,
+        example,
         options: ['der', 'die', 'das'],
       });
     }
+  }
+  const andere = lesson.andere || [];
+  const pool = andere.map((w) => w.uebersetzung);
+  for (const w of andere) {
+    const distractors = shuffle(pool.filter((t) => t !== w.uebersetzung)).slice(0, 3);
+    out.push({
+      key: `a|${w.wort}`,
+      subject: w.wort,
+      ask: 'Französisch',
+      answer: w.uebersetzung,
+      paradigm: `${w.wort} · ${w.uebersetzung}`,
+      example: w.beispiel || null,
+      options: shuffle([w.uebersetzung, ...distractors]),
+    });
   }
   return out;
 }
@@ -117,12 +138,13 @@ function homeView() {
   const pct = total ? Math.round((known / total) * 100) : 0;
   const verbs = state.lesson.verben?.length ?? 0;
   const nouns = state.lesson.nomen?.length ?? 0;
+  const others = state.lesson.andere?.length ?? 0;
 
   return `
   <header class="hero">
     <p class="eyebrow">Lektion ${esc(state.lesson.lektion ?? '')}</p>
     <h1>Vokabeln</h1>
-    <p class="sub">${verbs} Verben · ${nouns} Nomen · ${total} Formen</p>
+    <p class="sub">${verbs} Verben · ${nouns} Nomen · ${others} weitere</p>
   </header>
   <section class="panel">
     <div class="row">
@@ -135,7 +157,17 @@ function homeView() {
   <div style="height:4px"></div>
   <button class="primary" id="start">Quiz starten<small>${Math.min(SESSION_SIZE, total)} Fragen</small></button>
   <button class="secondary" id="cards">Karten durchgehen</button>
+  <button class="toggle" id="toggleExamples" aria-pressed="${state.showExamples}">
+    <span>Beispielsätze</span>
+    <span class="track"><i></i></span>
+  </button>
+  <button class="secondary" id="exportAnki">Nach Anki exportieren</button>
   ${installHint()}`;
+}
+
+function exampleBlock(beispiel) {
+  if (!state.showExamples || !beispiel) return '';
+  return `<p class="example">${esc(beispiel.de)}<span>${esc(beispiel.fr)}</span></p>`;
 }
 
 function installHint() {
@@ -169,7 +201,7 @@ function quizView() {
 
 function answerView(p) {
   if (p.options) {
-    return `<div class="choices">${p.options
+    return `<div class="choices">${shuffle([...p.options])
       .map((o) => `<button class="choice" data-choice="${esc(o)}">${esc(o)}</button>`)
       .join('')}</div>`;
   }
@@ -191,6 +223,7 @@ function feedbackView(p, ok) {
     <p class="verdict">${ok ? 'Richtig' : 'Falsch'}</p>
     <p class="solution">${esc(p.answer)}</p>
     <p class="paradigm">${esc(p.paradigm)}</p>
+    ${exampleBlock(p.example)}
   </section>
   <button class="primary" id="next">${last ? 'Auswertung' : 'Weiter'}</button>`;
 }
@@ -244,7 +277,7 @@ function cardsView() {
     <p class="ask">${esc(p.ask)}</p>
     <h2 class="subject">${esc(p.subject)}</h2>
     ${c.revealed
-      ? `<p class="answer-line">${esc(p.answer)}</p><p class="paradigm">${esc(p.paradigm)}</p>`
+      ? `<p class="answer-line">${esc(p.answer)}</p><p class="paradigm">${esc(p.paradigm)}</p>${exampleBlock(p.example)}`
       : `<p class="tap">Tippen zum Umdrehen</p>`}
   </button>
   ${c.revealed
@@ -257,20 +290,29 @@ function listView() {
   const hit = (fields) => !q || fields.join(' ').toLowerCase().includes(q);
   const verbs = (state.lesson.verben || []).filter((v) => hit([v.infinitiv, v.praesens, v.praeteritum, v.perfekt, v.uebersetzung || '']));
   const nouns = (state.lesson.nomen || []).filter((n) => hit([n.singular, n.plural, n.uebersetzung || '']));
+  const others = (state.lesson.andere || []).filter((w) => hit([w.wort, w.uebersetzung || '']));
 
   const verbRows = verbs.map((v) => `
     <li class="entry">
       <div class="entry-main"><b>${esc(v.infinitiv)}</b><span class="tr">${esc(v.uebersetzung || '')}</span></div>
       <div class="entry-sub">${esc(v.praesens)} · ${esc(v.praeteritum)} · ${esc(v.perfekt)}</div>
+      ${exampleBlock(v.beispiel)}
     </li>`).join('');
 
   const nounRows = nouns.map((n) => `
     <li class="entry">
       <div class="entry-main"><b>${esc(n.singular)}</b><span class="tr">${esc(n.uebersetzung || '')}</span></div>
-      <div class="entry-sub">Plural: ${esc(n.plural)}</div>
+      ${n.plural !== n.singular ? `<div class="entry-sub">Plural: ${esc(n.plural)}</div>` : ''}
+      ${exampleBlock(n.beispiel)}
     </li>`).join('');
 
-  const empty = verbs.length + nouns.length === 0;
+  const otherRows = others.map((w) => `
+    <li class="entry">
+      <div class="entry-main"><b>${esc(w.wort)}</b><span class="tr">${esc(w.uebersetzung || '')}</span></div>
+      ${exampleBlock(w.beispiel)}
+    </li>`).join('');
+
+  const empty = verbs.length + nouns.length + others.length === 0;
 
   return `
   <header class="hero">
@@ -281,6 +323,7 @@ function listView() {
   ${empty ? '<p class="empty">Nichts gefunden.</p>' : ''}
   ${verbs.length ? `<h3 class="section-title">Verben</h3><ul class="entries">${verbRows}</ul>` : ''}
   ${nouns.length ? `<h3 class="section-title">Nomen</h3><ul class="entries">${nounRows}</ul>` : ''}
+  ${others.length ? `<h3 class="section-title">Weitere Wörter</h3><ul class="entries">${otherRows}</ul>` : ''}
   <button class="ghost" id="reset" style="margin-top:18px">Fortschritt zurücksetzen</button>`;
 }
 
@@ -327,6 +370,16 @@ function wire() {
   $('cards')?.addEventListener('click', () => { state.tab = 'karten'; state.cards = null; render(); });
   $('quit')?.addEventListener('click', () => { state.quiz = null; render(); });
   $('next')?.addEventListener('click', nextQuestion);
+  $('exportAnki')?.addEventListener('click', exportAnki);
+  $('toggleExamples')?.addEventListener('click', () => {
+    state.showExamples = !state.showExamples;
+    try {
+      localStorage.setItem(EXAMPLES_KEY, state.showExamples ? '1' : '0');
+    } catch {
+      /* private mode */
+    }
+    render();
+  });
 
   $('startCards')?.addEventListener('click', () => startCards(false));
   $('dueCards')?.addEventListener('click', () => startCards(true));
@@ -429,10 +482,64 @@ function insertUmlaut(ch) {
   input.setSelectionRange(pos, pos);
 }
 
+/* ---------- export ---------- */
+
+function exportAnki() {
+  const block = (b) => (state.showExamples && b
+    ? `<br><span style="color:#888">${esc(b.de)}</span><br><i>${esc(b.fr)}</i>`
+    : '');
+  const rows = [];
+
+  for (const v of state.lesson.verben || []) {
+    rows.push([
+      esc(v.infinitiv),
+      `<b>${esc(v.praesens)}</b><br>${esc(v.praeteritum)}<br>${esc(v.perfekt)}<br><i>${esc(v.uebersetzung || '')}</i>${block(v.beispiel)}`,
+      'lektion12 verb',
+    ]);
+  }
+  for (const n of state.lesson.nomen || []) {
+    const plural = n.plural && n.plural !== n.singular ? `${esc(n.plural)}<br>` : '';
+    rows.push([
+      esc(n.singular),
+      `${plural}<i>${esc(n.uebersetzung || '')}</i>${block(n.beispiel)}`,
+      'lektion12 nomen',
+    ]);
+  }
+  for (const w of state.lesson.andere || []) {
+    rows.push([
+      esc(w.wort),
+      `<i>${esc(w.uebersetzung || '')}</i>${block(w.beispiel)}`,
+      'lektion12 andere',
+    ]);
+  }
+
+  const lines = [
+    '#separator:tab',
+    '#html:true',
+    '#tags column:3',
+    '#columns:Front,Back,Tags',
+    ...rows.map((row) => row.join('\t')),
+  ];
+  const blob = new Blob([`${lines.join('\n')}\n`], { type: 'text/tab-separated-values;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'vokabeln-lektion-12.tsv';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
+
 /* ---------- boot ---------- */
 
 async function init() {
   store.load();
+  try {
+    state.showExamples = localStorage.getItem(EXAMPLES_KEY) === '1';
+  } catch {
+    state.showExamples = false;
+  }
   try {
     const res = await fetch('vocab.json', { cache: 'no-cache' });
     if (!res.ok) throw new Error(`vocab.json (${res.status})`);
