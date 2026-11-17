@@ -61,6 +61,7 @@ const T = {
     tabLearn: 'Lernen',
     tabCards: 'Karten',
     tabList: 'Liste',
+    tabRapid: 'Schnell',
     verbs: 'Verben',
     nouns: 'Nomen',
     types: 'Fragetypen',
@@ -75,6 +76,10 @@ const T = {
     amount: 'Anzahl Fragen',
     all: 'Alle',
     write: 'Antworten schreiben',
+    rapid: 'Schnellmodus',
+    rapidDesc: 'Alle Wörter: erst das Wort, dann eine Form. Fehler kommen zurück.',
+    rapidStart: 'Los geht’s',
+    repeat: 'Wiederholung',
   },
   fr: {
     lesson: 'Leçon',
@@ -121,6 +126,7 @@ const T = {
     tabLearn: 'Apprendre',
     tabCards: 'Cartes',
     tabList: 'Liste',
+    tabRapid: 'Rapide',
     verbs: 'Verbes',
     nouns: 'Noms',
     types: 'Types de questions',
@@ -135,6 +141,10 @@ const T = {
     amount: 'Nombre de questions',
     all: 'Tout',
     write: 'Écrire les réponses',
+    rapid: 'Mode rapide',
+    rapidDesc: 'Tous les mots : d’abord le mot, puis une forme. Les erreurs reviennent.',
+    rapidStart: 'Commencer',
+    repeat: 'Répétition',
   },
 };
 
@@ -390,7 +400,7 @@ function quizView() {
   </header>
   <div class="bar thin"><i style="width:${(q.index / total) * 100}%"></i></div>
   <section class="prompt">
-    <p class="ask">${esc(t(p.ask))}</p>
+    <p class="ask">${esc(t(p.ask))}${p.repeat ? ` <span class="repeat">${t('repeat')}</span>` : ''}</p>
     <h2 class="subject">${esc(p.subject)}</h2>
   </section>
   ${answered ? feedbackView(p, q.verdict) : answerView(p)}`;
@@ -445,6 +455,43 @@ function summaryView() {
   </section>
   <button class="primary" id="again">${t('again')}</button>
   <button class="secondary" id="quit">${t('toOverview')}</button>`;
+}
+
+function buildRapidQueue() {
+  const groups = new Map();
+  for (const p of state.prompts) {
+    const word = p.key.split('|')[1] || p.key;
+    if (!groups.has(word)) groups.set(word, []);
+    groups.get(word).push(p);
+  }
+  const entries = [...groups.values()].map((list) => ({
+    trans: list.find((p) => p.ask === 'german'),
+    forms: list.filter((p) => p.ask !== 'german'),
+    box: Math.min(...list.map((p) => store.box(p.key))),
+  }));
+  entries.sort((a, b) => a.box - b.box);
+
+  const queue = [];
+  for (const e of entries) {
+    if (e.trans) queue.push(e.trans);
+    if (e.forms.length) queue.push(e.forms[Math.floor(Math.random() * e.forms.length)]);
+  }
+  return queue;
+}
+
+function rapidView() {
+  const count = buildRapidQueue().length;
+  return `
+  <header class="hero">
+    <div class="hero-top">
+      <p class="eyebrow">${t('rapid')}</p>
+      ${langSwitch()}
+    </div>
+    <h1>${t('rapid')}</h1>
+    <p class="sub">${t('rapidDesc')}</p>
+  </header>
+  <div style="height:4px"></div>
+  <button class="primary" id="startRapid">${t('rapidStart')}<small>${t('questions')(count)}</small></button>`;
 }
 
 function cardsView() {
@@ -549,6 +596,7 @@ function tabBar() {
     </button>`;
   return `<nav class="tabs">
     ${tab('lernen', t('tabLearn'), '<svg viewBox="0 0 24 24"><path d="M12 3 2 8l10 5 10-5-10-5Z"/><path d="M6 10.5V16c0 1.7 2.7 3 6 3s6-1.3 6-3v-5.5"/></svg>')}
+    ${tab('rapide', t('tabRapid'), '<svg viewBox="0 0 24 24"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z"/></svg>')}
     ${tab('karten', t('tabCards'), '<svg viewBox="0 0 24 24"><rect x="3" y="6" width="13" height="15" rx="2"/><path d="M8 3h10a2 2 0 0 1 2 2v12"/></svg>')}
     ${tab('liste', t('tabList'), '<svg viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/></svg>')}
   </nav>`;
@@ -569,7 +617,8 @@ function render() {
   }
 
   let body;
-  if (state.tab === 'lernen') body = state.quiz ? quizView() : homeView();
+  if (state.tab === 'lernen') body = state.quiz?.tab === 'lernen' ? quizView() : homeView();
+  else if (state.tab === 'rapide') body = state.quiz?.tab === 'rapide' ? quizView() : rapidView();
   else if (state.tab === 'karten') body = cardsView();
   else body = listView();
 
@@ -586,6 +635,7 @@ function wire() {
   $('quit')?.addEventListener('click', () => { state.quiz = null; render(); });
   $('next')?.addEventListener('click', nextQuestion);
   $('exportAnki')?.addEventListener('click', exportAnki);
+  $('startRapid')?.addEventListener('click', startRapid);
 
   $('toggleWrite')?.addEventListener('click', () => {
     state.write = !state.write;
@@ -696,8 +746,15 @@ function wire() {
 
 function startQuiz() {
   const queue = pickSession(state.size || activePrompts().length);
-  state.quiz = { queue, index: 0, verdict: null, correct: 0, done: queue.length === 0 };
+  state.quiz = { queue, index: 0, verdict: null, correct: 0, done: queue.length === 0, tab: 'lernen' };
   state.tab = 'lernen';
+  render();
+}
+
+function startRapid() {
+  const queue = buildRapidQueue();
+  state.quiz = { queue, index: 0, verdict: null, correct: 0, done: queue.length === 0, tab: 'rapide', repeated: new Set() };
+  state.tab = 'rapide';
   render();
 }
 
@@ -711,6 +768,10 @@ function submitAnswer(value) {
   store.grade(p.key, ok);
   q.verdict = ok;
   if (ok) q.correct += 1;
+  if (!ok && q.repeated && !q.repeated.has(p.key)) {
+    q.repeated.add(p.key);
+    q.queue.push({ ...p, repeat: true });
+  }
   render();
 }
 
