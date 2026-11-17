@@ -554,6 +554,13 @@ async function init() {
 function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return;
   const register = () => navigator.serviceWorker.register('sw.js').catch(() => {});
+  const hadController = Boolean(navigator.serviceWorker.controller);
+  let reloading = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController || reloading) return;
+    reloading = true;
+    location.reload();
+  });
   if (document.readyState === 'complete') register();
   else addEventListener('load', register, { once: true });
 }
