@@ -3,6 +3,9 @@
 const STORAGE_KEY = 'vokabeln.progress.v1';
 const EXAMPLES_KEY = 'vokabeln.examples.v1';
 const LANG_KEY = 'vokabeln.lang.v1';
+const TYPES_KEY = 'vokabeln.types.v1';
+const TYPES = ['p3', 'praet', 'perf', 'plural', 'artikel', 'german'];
+const TYPE_LABEL = { p3: 'typeP3', praet: 'typePraet', perf: 'typePerf', plural: 'typePlural', artikel: 'typeArtikel', german: 'typeGerman' };
 const SESSION_SIZE = 10;
 const INTERVALS = [0, 10 * 60_000, 24 * 3_600_000, 3 * 86_400_000, 7 * 86_400_000, 21 * 86_400_000];
 const MAX_BOX = INTERVALS.length - 1;
@@ -58,6 +61,13 @@ const T = {
     tabList: 'Liste',
     verbs: 'Verben',
     nouns: 'Nomen',
+    types: 'Fragetypen',
+    typeP3: 'Präsens',
+    typePraet: 'Präteritum',
+    typePerf: 'Perfekt',
+    typePlural: 'Plural',
+    typeArtikel: 'Artikel',
+    typeGerman: 'Übersetzung',
   },
   fr: {
     lesson: 'Leçon',
@@ -106,6 +116,13 @@ const T = {
     tabList: 'Liste',
     verbs: 'Verbes',
     nouns: 'Noms',
+    types: 'Types de questions',
+    typeP3: 'Présent',
+    typePraet: 'Prétérit',
+    typePerf: 'Parfait',
+    typePlural: 'Pluriel',
+    typeArtikel: 'Article',
+    typeGerman: 'Traduction',
   },
 };
 
@@ -156,6 +173,7 @@ const state = {
   error: null,
   showExamples: false,
   lang: 'de',
+  types: { p3: true, praet: true, perf: true, plural: true, artikel: true, german: true },
 };
 
 /* ---------- data ---------- */
@@ -226,11 +244,15 @@ function shuffle(list) {
   return list;
 }
 
+function activePrompts() {
+  return state.prompts.filter((p) => state.types[p.ask]);
+}
+
 function pickSession(size) {
   const now = Date.now();
   const due = [];
   const later = [];
-  for (const p of state.prompts) (store.due(p.key) <= now ? due : later).push(p);
+  for (const p of activePrompts()) (store.due(p.key) <= now ? due : later).push(p);
   shuffle(due);
   later.sort((a, b) => store.box(a.key) - store.box(b.key) || store.due(a.key) - store.due(b.key));
   return [...due, ...later].slice(0, size);
@@ -255,9 +277,10 @@ function langSwitch() {
 
 function homeView() {
   const now = Date.now();
-  const total = state.prompts.length;
-  const known = state.prompts.filter((p) => store.box(p.key) >= KNOWN_BOX).length;
-  const due = state.prompts.filter((p) => store.due(p.key) <= now).length;
+  const pool = activePrompts();
+  const total = pool.length;
+  const known = pool.filter((p) => store.box(p.key) >= KNOWN_BOX).length;
+  const due = pool.filter((p) => store.due(p.key) <= now).length;
   const pct = total ? Math.round((known / total) * 100) : 0;
   const verbs = state.lesson.verben?.length ?? 0;
   const nouns = state.lesson.nomen?.length ?? 0;
@@ -280,6 +303,12 @@ function homeView() {
     <div class="bar"><i style="width:${pct}%"></i></div>
     <p class="muted small">${t('known')}</p>
   </section>
+  <div class="types">
+    <p class="section-title">${t('types')}</p>
+    <div class="chips">
+      ${TYPES.map((k) => `<button class="chip ${state.types[k] ? 'active' : ''}" data-type="${k}">${t(TYPE_LABEL[k])}</button>`).join('')}
+    </div>
+  </div>
   <div style="height:4px"></div>
   <button class="primary" id="start">${t('startQuiz')}<small>${t('questions')(Math.min(SESSION_SIZE, total))}</small></button>
   <button class="secondary" id="cards">${t('cards')}</button>
@@ -365,7 +394,7 @@ function summaryView() {
 function cardsView() {
   const c = state.cards;
   if (!c) {
-    const due = state.prompts.filter((p) => store.due(p.key) <= Date.now()).length;
+    const due = activePrompts().filter((p) => store.due(p.key) <= Date.now()).length;
     return `
     <header class="hero">
       <div class="hero-top">
@@ -373,7 +402,7 @@ function cardsView() {
         ${langSwitch()}
       </div>
       <h1>${t('tabCards')}</h1>
-      <p class="sub">${t('forms')(state.prompts.length)} · ${t('due')(due)}</p>
+      <p class="sub">${t('forms')(activePrompts().length)} · ${t('due')(due)}</p>
     </header>
     <div style="height:4px"></div>
     <button class="primary" id="startCards">${t('allCards')}</button>
@@ -537,6 +566,21 @@ function wire() {
   document.querySelectorAll('[data-tab]').forEach((btn) =>
     btn.addEventListener('click', () => { state.tab = btn.dataset.tab; render(); }));
 
+  document.querySelectorAll('[data-type]').forEach((btn) =>
+    btn.addEventListener('click', () => {
+      const key = btn.dataset.type;
+      if (state.types[key] && TYPES.filter((k) => state.types[k]).length === 1) return;
+      state.types[key] = !state.types[key];
+      try {
+        localStorage.setItem(TYPES_KEY, JSON.stringify(TYPES.filter((k) => state.types[k])));
+      } catch {
+        /* private mode */
+      }
+      state.quiz = null;
+      state.cards = null;
+      render();
+    }));
+
   document.querySelectorAll('[data-lang]').forEach((btn) =>
     btn.addEventListener('click', () => {
       state.lang = btn.dataset.lang;
@@ -598,7 +642,7 @@ function nextQuestion() {
 
 function startCards(onlyDue) {
   const now = Date.now();
-  const queue = state.prompts.filter((p) => !onlyDue || store.due(p.key) <= now);
+  const queue = activePrompts().filter((p) => !onlyDue || store.due(p.key) <= now);
   queue.sort((a, b) => store.box(a.key) - store.box(b.key) || store.due(a.key) - store.due(b.key));
   state.cards = { queue, index: 0, revealed: false, done: queue.length === 0 };
   render();
@@ -675,11 +719,27 @@ function exportAnki() {
 
 /* ---------- boot ---------- */
 
+function loadTypes() {
+  const all = {};
+  for (const k of TYPES) all[k] = true;
+  try {
+    const raw = localStorage.getItem(TYPES_KEY);
+    if (!raw) return all;
+    const list = JSON.parse(raw);
+    if (!Array.isArray(list) || list.length === 0) return all;
+    for (const k of TYPES) all[k] = list.includes(k);
+  } catch {
+    /* ignore */
+  }
+  return all;
+}
+
 async function init() {
   store.load();
   try {
     state.showExamples = localStorage.getItem(EXAMPLES_KEY) === '1';
     state.lang = localStorage.getItem(LANG_KEY) === 'fr' ? 'fr' : 'de';
+    state.types = loadTypes();
   } catch {
     state.showExamples = false;
   }

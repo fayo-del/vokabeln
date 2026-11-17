@@ -203,6 +203,33 @@ button {
   font-size: 13px;
 }
 
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.chip {
+  padding: 8px 13px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  transition: background .15s ease, color .15s ease, border-color .15s ease;
+}
+
+.chip.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+.types { display: flex; flex-direction: column; gap: 8px; }
+
+.types .section-title { margin: 0; }
+
 .toggle {
   width: 100%;
   padding: 14px 16px;
