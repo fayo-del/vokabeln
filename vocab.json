@@ -1,0 +1,27 @@
+{
+  "lektion": 12,
+  "verben": [
+    { "infinitiv": "ankommen", "praesens": "kommt an", "praeteritum": "kam an", "perfekt": "ist angekommen", "uebersetzung": "to arrive" },
+    { "infinitiv": "abfahren", "praesens": "fährt ab", "praeteritum": "fuhr ab", "perfekt": "ist abgefahren", "uebersetzung": "to depart" },
+    { "infinitiv": "einsteigen", "praesens": "steigt ein", "praeteritum": "stieg ein", "perfekt": "ist eingestiegen", "uebersetzung": "to get on" },
+    { "infinitiv": "aussteigen", "praesens": "steigt aus", "praeteritum": "stieg aus", "perfekt": "ist ausgestiegen", "uebersetzung": "to get off" },
+    { "infinitiv": "umsteigen", "praesens": "steigt um", "praeteritum": "stieg um", "perfekt": "ist umgestiegen", "uebersetzung": "to change (trains)" },
+    { "infinitiv": "buchen", "praesens": "bucht", "praeteritum": "buchte", "perfekt": "hat gebucht", "uebersetzung": "to book" },
+    { "infinitiv": "reservieren", "praesens": "reserviert", "praeteritum": "reservierte", "perfekt": "hat reserviert", "uebersetzung": "to reserve" },
+    { "infinitiv": "übernachten", "praesens": "übernachtet", "praeteritum": "übernachtete", "perfekt": "hat übernachtet", "uebersetzung": "to stay overnight" },
+    { "infinitiv": "besichtigen", "praesens": "besichtigt", "praeteritum": "besichtigte", "perfekt": "hat besichtigt", "uebersetzung": "to visit (sight)" },
+    { "infinitiv": "packen", "praesens": "packt", "praeteritum": "packte", "perfekt": "hat gepackt", "uebersetzung": "to pack" }
+  ],
+  "nomen": [
+    { "singular": "die Reise", "plural": "die Reisen", "uebersetzung": "trip" },
+    { "singular": "der Koffer", "plural": "die Koffer", "uebersetzung": "suitcase" },
+    { "singular": "der Bahnhof", "plural": "die Bahnhöfe", "uebersetzung": "station" },
+    { "singular": "das Gleis", "plural": "die Gleise", "uebersetzung": "platform track" },
+    { "singular": "die Fahrkarte", "plural": "die Fahrkarten", "uebersetzung": "ticket" },
+    { "singular": "der Flug", "plural": "die Flüge", "uebersetzung": "flight" },
+    { "singular": "das Hotel", "plural": "die Hotels", "uebersetzung": "hotel" },
+    { "singular": "der Strand", "plural": "die Strände", "uebersetzung": "beach" },
+    { "singular": "das Zimmer", "plural": "die Zimmer", "uebersetzung": "room" },
+    { "singular": "die Rechnung", "plural": "die Rechnungen", "uebersetzung": "bill" }
+  ]
+}
