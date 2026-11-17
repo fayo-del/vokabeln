@@ -1,4 +1,4 @@
-const CACHE = 'vokabeln-v2';
+const CACHE = 'vokabeln-v3';
 const ASSETS = [
   './',
   './index.html',
@@ -33,17 +33,19 @@ self.addEventListener('fetch', (event) => {
   if (url.origin !== self.location.origin) return;
 
   event.respondWith(
-    caches.match(request).then((hit) => {
-      if (hit) return hit;
-      return fetch(request)
-        .then((response) => {
-          if (response.ok) {
-            const copy = response.clone();
-            caches.open(CACHE).then((cache) => cache.put(request, copy));
-          }
-          return response;
-        })
-        .catch(() => (request.mode === 'navigate' ? caches.match('./index.html') : Response.error()));
-    }),
+    fetch(request)
+      .then((response) => {
+        if (response.ok) {
+          const copy = response.clone();
+          caches.open(CACHE).then((cache) => cache.put(request, copy));
+        }
+        return response;
+      })
+      .catch(() =>
+        caches.match(request).then((hit) => {
+          if (hit) return hit;
+          if (request.mode === 'navigate') return caches.match('./index.html');
+          return Response.error();
+        })),
   );
 });

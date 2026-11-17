@@ -82,17 +82,17 @@ function buildPrompts(lesson) {
     }
   }
   const andere = lesson.andere || [];
-  const pool = andere.map((w) => w.uebersetzung);
+  const pool = andere.map((w) => w.wort);
   for (const w of andere) {
-    const distractors = shuffle(pool.filter((t) => t !== w.uebersetzung)).slice(0, 3);
+    const distractors = shuffle(pool.filter((t) => t !== w.wort)).slice(0, 3);
     out.push({
       key: `a|${w.wort}`,
-      subject: w.wort,
-      ask: 'Französisch',
-      answer: w.uebersetzung,
-      paradigm: `${w.wort} · ${w.uebersetzung}`,
+      subject: w.uebersetzung,
+      ask: 'Deutsch',
+      answer: w.wort,
+      paradigm: `${w.uebersetzung} · ${w.wort}`,
       example: w.beispiel || null,
-      options: shuffle([w.uebersetzung, ...distractors]),
+      options: shuffle([w.wort, ...distractors]),
     });
   }
   return out;
@@ -508,8 +508,8 @@ function exportAnki() {
   }
   for (const w of state.lesson.andere || []) {
     rows.push([
-      esc(w.wort),
-      `<i>${esc(w.uebersetzung || '')}</i>${block(w.beispiel)}`,
+      esc(w.uebersetzung || ''),
+      `<b>${esc(w.wort)}</b>${block(w.beispiel)}`,
       'lektion12 andere',
     ]);
   }
