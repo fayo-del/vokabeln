@@ -5,6 +5,7 @@ const EXAMPLES_KEY = 'vokabeln.examples.v1';
 const LANG_KEY = 'vokabeln.lang.v1';
 const TYPES_KEY = 'vokabeln.types.v1';
 const SIZE_KEY = 'vokabeln.size.v1';
+const WRITE_KEY = 'vokabeln.write.v1';
 const SIZES = [10, 20, 50, 0];
 const TYPES = ['p3', 'praet', 'perf', 'plural', 'artikel', 'german'];
 const TYPE_LABEL = { p3: 'typeP3', praet: 'typePraet', perf: 'typePerf', plural: 'typePlural', artikel: 'typeArtikel', german: 'typeGerman' };
@@ -71,6 +72,7 @@ const T = {
     typeGerman: 'Übersetzung',
     amount: 'Anzahl Fragen',
     all: 'Alle',
+    write: 'Antworten schreiben',
   },
   fr: {
     lesson: 'Leçon',
@@ -128,6 +130,7 @@ const T = {
     typeGerman: 'Traduction',
     amount: 'Nombre de questions',
     all: 'Tout',
+    write: 'Écrire les réponses',
   },
 };
 
@@ -180,6 +183,7 @@ const state = {
   lang: 'de',
   types: { p3: true, praet: true, perf: true, plural: true, artikel: true, german: true },
   size: 10,
+  write: true,
 };
 
 /* ---------- data ---------- */
@@ -190,22 +194,24 @@ function buildPrompts(lesson) {
   for (const v of lesson.verben || []) {
     const paradigm = `${v.infinitiv} · ${v.praesens} · ${v.praeteritum} · ${v.perfekt}`;
     const example = v.beispiel || null;
-    out.push({ key: `v|${v.infinitiv}|p3`, subject: v.infinitiv, ask: 'p3', answer: v.praesens, paradigm, example });
-    out.push({ key: `v|${v.infinitiv}|praet`, subject: v.infinitiv, ask: 'praet', answer: v.praeteritum, paradigm, example });
-    out.push({ key: `v|${v.infinitiv}|perf`, subject: v.infinitiv, ask: 'perf', answer: v.perfekt, paradigm, example });
+    const subject = v.uebersetzung || v.infinitiv;
+    out.push({ key: `v|${v.infinitiv}|p3`, subject, ask: 'p3', answer: v.praesens, paradigm, example });
+    out.push({ key: `v|${v.infinitiv}|praet`, subject, ask: 'praet', answer: v.praeteritum, paradigm, example });
+    out.push({ key: `v|${v.infinitiv}|perf`, subject, ask: 'perf', answer: v.perfekt, paradigm, example });
   }
 
   for (const n of lesson.nomen || []) {
     const paradigm = n.singular === n.plural ? n.singular : `${n.singular} · ${n.plural}`;
     const example = n.beispiel || null;
+    const subject = n.uebersetzung || n.singular;
     if (n.plural && n.plural !== n.singular) {
-      out.push({ key: `n|${n.singular}|pl`, subject: n.singular, ask: 'plural', answer: n.plural, paradigm, example });
+      out.push({ key: `n|${n.singular}|pl`, subject, ask: 'plural', answer: n.plural, paradigm, example });
     }
     const [artikel, ...rest] = n.singular.split(' ');
     if (rest.length) {
       out.push({
         key: `n|${n.singular}|art`,
-        subject: rest.join(' '),
+        subject,
         ask: 'artikel',
         answer: artikel,
         paradigm,
@@ -237,9 +243,17 @@ function normalize(value) {
   return value.trim().toLowerCase().replace(/\s+/g, ' ').replace(/[.!]+$/, '');
 }
 
+function acceptedAnswers(answer) {
+  const base = normalize(answer);
+  const out = new Set([base]);
+  out.add(base.replace(/[()]/g, ''));
+  out.add(base.replace(/\([^)]*\)/g, '').replace(/\s+/g, ' ').trim());
+  return out;
+}
+
 function matches(prompt, input) {
-  if (prompt.options) return input.trim() === prompt.answer;
-  return normalize(input) === normalize(prompt.answer);
+  if (prompt.options && !state.write) return input.trim() === prompt.answer;
+  return acceptedAnswers(prompt.answer).has(normalize(input));
 }
 
 function shuffle(list) {
@@ -324,6 +338,10 @@ function homeView() {
   <div style="height:4px"></div>
   <button class="primary" id="start">${t('startQuiz')}<small>${t('questions')(Math.min(state.size || total, total))}</small></button>
   <button class="secondary" id="cards">${t('cards')}</button>
+  <button class="toggle" id="toggleWrite" aria-pressed="${state.write}">
+    <span>${t('write')}</span>
+    <span class="track"><i></i></span>
+  </button>
   <button class="toggle" id="toggleExamples" aria-pressed="${state.showExamples}">
     <span>${t('examples')}</span>
     <span class="track"><i></i></span>
@@ -362,7 +380,7 @@ function quizView() {
 }
 
 function answerView(p) {
-  if (p.options) {
+  if (p.options && !state.write) {
     return `<div class="choices">${shuffle([...p.options])
       .map((o) => `<button class="choice" data-choice="${esc(o)}">${esc(o)}</button>`)
       .join('')}</div>`;
@@ -543,6 +561,17 @@ function wire() {
   $('next')?.addEventListener('click', nextQuestion);
   $('exportAnki')?.addEventListener('click', exportAnki);
 
+  $('toggleWrite')?.addEventListener('click', () => {
+    state.write = !state.write;
+    try {
+      localStorage.setItem(WRITE_KEY, state.write ? '1' : '0');
+    } catch {
+      /* private mode */
+    }
+    state.quiz = null;
+    render();
+  });
+
   $('toggleExamples')?.addEventListener('click', () => {
     state.showExamples = !state.showExamples;
     try {
@@ -702,16 +731,16 @@ function exportAnki() {
 
   for (const v of state.lesson.verben || []) {
     rows.push([
-      esc(v.infinitiv),
-      `<b>${esc(v.praesens)}</b><br>${esc(v.praeteritum)}<br>${esc(v.perfekt)}<br><i>${esc(v.uebersetzung || '')}</i>${block(v.beispiel)}`,
+      esc(v.uebersetzung || v.infinitiv),
+      `<b>${esc(v.infinitiv)}</b><br>${esc(v.praesens)}<br>${esc(v.praeteritum)}<br>${esc(v.perfekt)}${block(v.beispiel)}`,
       'lektion12 verb',
     ]);
   }
   for (const n of state.lesson.nomen || []) {
-    const plural = n.plural && n.plural !== n.singular ? `${esc(n.plural)}<br>` : '';
+    const plural = n.plural && n.plural !== n.singular ? `<br>${esc(n.plural)}` : '';
     rows.push([
-      esc(n.singular),
-      `${plural}<i>${esc(n.uebersetzung || '')}</i>${block(n.beispiel)}`,
+      esc(n.uebersetzung || n.singular),
+      `<b>${esc(n.singular)}</b>${plural}${block(n.beispiel)}`,
       'lektion12 nomen',
     ]);
   }
@@ -764,6 +793,7 @@ async function init() {
     state.showExamples = localStorage.getItem(EXAMPLES_KEY) === '1';
     state.lang = localStorage.getItem(LANG_KEY) === 'fr' ? 'fr' : 'de';
     state.types = loadTypes();
+    state.write = localStorage.getItem(WRITE_KEY) !== '0';
     const size = Number(localStorage.getItem(SIZE_KEY));
     state.size = SIZES.includes(size) ? size : 10;
   } catch {
