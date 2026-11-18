@@ -267,7 +267,15 @@ function buildPrompts(lesson) {
 }
 
 function normalize(value) {
-  return value.trim().toLowerCase().replace(/\s+/g, ' ').replace(/[.!]+$/, '');
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/ß/g, 'ss')
+    .replace(/œ/g, 'oe')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .replace(/[.!]+$/, '');
 }
 
 function acceptedAnswers(answer) {

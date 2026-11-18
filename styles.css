@@ -321,7 +321,20 @@ button {
 
 .subject { font-size: 38px; font-weight: 700; letter-spacing: -.02em; }
 
-.answer { display: flex; flex-direction: column; gap: 12px; margin-top: auto; }
+@media (max-height: 700px) {
+  .prompt { padding: 14px 0 6px; }
+  .subject { font-size: 30px; }
+  .answer, .choices { gap: 8px; }
+}
+
+@media (max-height: 520px) {
+  .prompt { padding: 8px 0 4px; }
+  .subject { font-size: 24px; }
+  .umlauts .key { padding: 8px 0; font-size: 16px; }
+  .answer .primary { padding: 12px 14px; font-size: 15px; }
+}
+
+.answer { display: flex; flex-direction: column; gap: 12px; margin-top: 2px; }
 
 .input {
   width: 100%;
@@ -360,7 +373,7 @@ button {
 
 .key:active { background: var(--border); }
 
-.choices { display: flex; flex-direction: column; gap: 10px; margin-top: auto; }
+.choices { display: flex; flex-direction: column; gap: 10px; margin-top: 2px; }
 
 .choice {
   padding: 18px;
