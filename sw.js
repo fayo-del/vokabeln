@@ -1,4 +1,4 @@
-const CACHE = 'vokabeln-v5';
+const CACHE = 'vokabeln-v6';
 const ASSETS = [
   './',
   './index.html',

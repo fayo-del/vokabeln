@@ -488,7 +488,7 @@ button {
   position: sticky;
   bottom: 0;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   background: var(--surface);
   border-top: 1px solid var(--border);
   padding-bottom: env(safe-area-inset-bottom);
@@ -512,6 +512,12 @@ button {
 .tab svg { width: 23px; height: 23px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 
 .tab.active { color: var(--accent); }
+
+.rank { color: var(--muted); font-weight: 600; margin-right: 2px; }
+
+.entry .miss { color: var(--bad); font-weight: 700; }
+
+.formline { margin-top: 4px; font-size: 13px; color: var(--muted); }
 
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }

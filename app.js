@@ -6,6 +6,7 @@ const LANG_KEY = 'vokabeln.lang.v1';
 const TYPES_KEY = 'vokabeln.types.v1';
 const SIZE_KEY = 'vokabeln.size.v1';
 const WRITE_KEY = 'vokabeln.write.v1';
+const STATS_KEY = 'vokabeln.stats.v1';
 const SIZES = [10, 20, 50, 0];
 const TYPES = ['p3', 'praet', 'perf', 'plural', 'artikel', 'german', 'wordplural'];
 const TYPE_LABEL = { p3: 'typeP3', praet: 'typePraet', perf: 'typePerf', plural: 'typePlural', artikel: 'typeArtikel', german: 'typeGerman', wordplural: 'wordplural' };
@@ -80,6 +81,14 @@ const T = {
     rapidDesc: 'Alle Wörter: erst das Wort, dann eine Form. Fehler kommen zurück.',
     rapidStart: 'Los geht’s',
     repeat: 'Wiederholung',
+    tabFehler: 'Fehler',
+    fehlEmpty: 'Noch keine Antworten. Starte ein Quiz!',
+    fehlPerfect: 'Keine Fehler – weiter so!',
+    fehlPractise: 'Fehler üben',
+    fehlErrors: (n) => `${n}× falsch`,
+    fehlAttempts: (n) => `${n} Versuche`,
+    fehlClean: (n) => `${n} ${n === 1 ? 'Wort' : 'Wörter'} ohne Fehler`,
+    fehlBox: 'Box',
   },
   fr: {
     lesson: 'Leçon',
@@ -145,6 +154,14 @@ const T = {
     rapidDesc: 'Tous les mots : d’abord le mot, puis une forme. Les erreurs reviennent.',
     rapidStart: 'Commencer',
     repeat: 'Répétition',
+    tabFehler: 'Erreurs',
+    fehlEmpty: 'Pas encore de réponses. Lance un quiz !',
+    fehlPerfect: 'Aucune erreur, continue comme ça !',
+    fehlPractise: 'Rejouer les erreurs',
+    fehlErrors: (n) => `${n}× raté`,
+    fehlAttempts: (n) => `${n} tentatives`,
+    fehlClean: (n) => `${n} ${n === 1 ? 'mot' : 'mots'} sans faute`,
+    fehlBox: 'Boîte',
   },
 };
 
@@ -175,8 +192,37 @@ const store = {
     return this.data[key]?.[1] ?? 0;
   },
   grade(key, ok) {
+    stats.grade(key, ok);
     const box = ok ? Math.min(this.box(key) + 1, MAX_BOX) : 0;
     this.data[key] = [box, Date.now() + INTERVALS[box]];
+    this.save();
+  },
+  reset() {
+    this.data = {};
+    this.save();
+  },
+};
+
+const stats = {
+  data: {},
+  load() {
+    try {
+      this.data = JSON.parse(localStorage.getItem(STATS_KEY) || '{}') || {};
+    } catch {
+      this.data = {};
+    }
+  },
+  save() {
+    try {
+      localStorage.setItem(STATS_KEY, JSON.stringify(this.data));
+    } catch {
+      /* private mode / quota */
+    }
+  },
+  grade(key, ok) {
+    const entry = this.data[key] || [0, 0];
+    entry[ok ? 0 : 1] += 1;
+    this.data[key] = entry;
     this.save();
   },
   reset() {
@@ -597,6 +643,75 @@ function listView() {
   <button class="ghost" id="reset" style="margin-top:18px">${t('reset')}</button>`;
 }
 
+function fehlView() {
+  const info = new Map();
+  for (const v of state.lesson.verben || []) info.set(v.infinitiv, { de: v.infinitiv, fr: v.uebersetzung || '' });
+  for (const n of state.lesson.nomen || []) info.set(n.singular, { de: n.singular, fr: n.uebersetzung || '' });
+  for (const w of state.lesson.andere || []) info.set(w.wort, { de: w.wort, fr: w.uebersetzung || '' });
+
+  const groups = new Map();
+  for (const p of activePrompts()) {
+    const s = stats.data[p.key];
+    if (!s) continue;
+    const [ok, no] = s;
+    if (!ok && !no) continue;
+    const word = p.key.split('|')[1] || p.key;
+    let g = groups.get(word);
+    if (!g) {
+      const meta = info.get(word) || { de: word, fr: '' };
+      g = { de: meta.de, fr: meta.fr, wrong: 0, total: 0, box: -1, forms: [] };
+      groups.set(word, g);
+    }
+    g.wrong += no;
+    g.total += ok + no;
+    g.box = Math.max(g.box, store.box(p.key));
+    if (no > 0) g.forms.push({ label: t(TYPE_LABEL[p.ask] || 'german'), wrong: no, total: ok + no });
+  }
+
+  const words = [...groups.values()];
+  const missed = words
+    .filter((w) => w.wrong > 0)
+    .sort((a, b) => b.wrong - a.wrong || a.wrong / a.total - b.wrong / b.total || a.de.localeCompare(b.de));
+  const clean = words.length - missed.length;
+  const attempted = words.reduce((sum, w) => sum + w.total, 0);
+
+  const head = `
+  <header class="hero">
+    <div class="hero-top">
+      <p class="eyebrow">${t('lesson')} ${esc(state.lesson.lektion ?? '')}</p>
+      ${langSwitch()}
+    </div>
+    <h1>${t('tabFehler')}</h1>
+    <p class="sub">${attempted ? t('fehlAttempts')(attempted) : t('forms')(activePrompts().length)}</p>
+  </header>`;
+
+  if (!attempted) return `${head}<p class="empty">${t('fehlEmpty')}</p>`;
+  if (!missed.length) return `${head}<p class="empty">${t('fehlPerfect')}</p><p class="sub" style="text-align:center">${t('fehlClean')(clean)}</p>`;
+
+  return `
+  ${head}
+  <button class="primary" id="practiseFehler">${t('fehlPractise')}<small>${missed.length}</small></button>
+  <ul class="entries">
+    ${missed.map((w, i) => `
+    <li class="entry">
+      <div class="entry-main">
+        <b><span class="rank">${i + 1}.</span> ${esc(w.de)}</b>
+        <span class="tr">${esc(w.fr)}</span>
+      </div>
+      <div class="entry-sub"><span class="miss">${t('fehlErrors')(w.wrong)}</span> · ${t('fehlAttempts')(w.total)} · ${t('fehlBox')} ${Math.max(w.box, 0)}</div>
+      ${w.forms.length ? `<div class="formline">${w.forms.map((f) => `${esc(f.label)} ${f.wrong}/${f.total}`).join(' · ')}</div>` : ''}
+    </li>`).join('')}
+  </ul>
+  <p class="sub" style="text-align:center">${t('fehlClean')(clean)}</p>`;
+}
+
+function startErrorQuiz() {
+  const queue = shuffle(activePrompts().filter((p) => (stats.data[p.key] || [0, 0])[1] > 0));
+  state.quiz = { queue, index: 0, verdict: null, correct: 0, done: queue.length === 0, tab: 'lernen' };
+  state.tab = 'lernen';
+  render();
+}
+
 function tabBar() {
   const tab = (id, label, icon) => `
     <button class="tab ${state.tab === id ? 'active' : ''}" data-tab="${id}">
@@ -607,6 +722,7 @@ function tabBar() {
     ${tab('rapide', t('tabRapid'), '<svg viewBox="0 0 24 24"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z"/></svg>')}
     ${tab('karten', t('tabCards'), '<svg viewBox="0 0 24 24"><rect x="3" y="6" width="13" height="15" rx="2"/><path d="M8 3h10a2 2 0 0 1 2 2v12"/></svg>')}
     ${tab('liste', t('tabList'), '<svg viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/></svg>')}
+    ${tab('fehler', t('tabFehler'), '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.4v.1"/></svg>')}
   </nav>`;
 }
 
@@ -628,6 +744,7 @@ function render() {
   if (state.tab === 'lernen') body = state.quiz?.tab === 'lernen' ? quizView() : homeView();
   else if (state.tab === 'rapide') body = state.quiz?.tab === 'rapide' ? quizView() : rapidView();
   else if (state.tab === 'karten') body = cardsView();
+  else if (state.tab === 'fehler') body = fehlView();
   else body = listView();
 
   app.innerHTML = `<main class="view">${body}</main>${tabBar()}`;
@@ -638,6 +755,7 @@ function wire() {
   const $ = (id) => document.getElementById(id);
 
   $('start')?.addEventListener('click', startQuiz);
+  $('practiseFehler')?.addEventListener('click', startErrorQuiz);
   $('again')?.addEventListener('click', startQuiz);
   $('cards')?.addEventListener('click', () => { state.tab = 'karten'; state.cards = null; render(); });
   $('quit')?.addEventListener('click', () => { state.quiz = null; render(); });
@@ -745,6 +863,7 @@ function wire() {
   $('reset')?.addEventListener('click', () => {
     if (confirm(t('resetAsk'))) {
       store.reset();
+      stats.reset();
       render();
     }
   });
@@ -898,6 +1017,7 @@ function loadTypes() {
 
 async function init() {
   store.load();
+  stats.load();
   try {
     state.showExamples = localStorage.getItem(EXAMPLES_KEY) === '1';
     state.lang = localStorage.getItem(LANG_KEY) === 'fr' ? 'fr' : 'de';
